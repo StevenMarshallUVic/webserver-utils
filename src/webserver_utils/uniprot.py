@@ -1,12 +1,12 @@
 import copy
 import json
 import logging
-import sys
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 from Bio import UniProt
 from Bio.Seq import Seq
@@ -38,6 +38,9 @@ TP_UNIPROT_ORGANISM_IDS = [
     53436,  # Treponema pallidum subsp. endemicum
     1155776,  # Treponema pallidum subsp. endemicum str. Bosnia A
 ]
+
+
+ROOT_UNIPROT_URL = "https://www.uniprot.org"
 
 
 class Database(StrEnum):
@@ -196,13 +199,106 @@ class CitationType(StrEnum):
 
 
 @dataclass(frozen=True)
-class Evidence:
+class _WebserverSubclass(ABC):
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs) -> Self:
+        pass
+
+    def get_pretty_str(self, **kwargs) -> str:
+        """Create a prettified version of this class's attributes.
+
+        Parameters
+        ----------
+        kwargs
+            Optional arguments to specify which attributes to exclude.
+            To exclude an attribute, provide the attribute's name as the
+            kwarg and set its value to False. These attribute names should be
+            namespaced by the name of the class they belong to.
+
+        Examples
+        --------
+        get_pretty_str(ClassName__custom_attr=False)
+            Disables the attribute `custom_attr` from any instances of the
+            `ClassName` class.
+
+        Returns
+        -------
+        str
+            Prettified string of this class's attributes.
+        """
+
+        pretty: str = ""
+        for attribute, value in vars(self).items():
+            namespaced_attribute = f"{type(self).__name__}__{attribute}"
+            # Handle arguments
+            if namespaced_attribute in kwargs:
+                arg = kwargs[namespaced_attribute]
+                if not isinstance(arg, bool):
+                    raise ValueError(
+                        f"Unexpected value for kwarg '{namespaced_attribute}': "
+                        f"{arg}. See docstring for proper usage."
+                    )
+
+                # Skip attributes if user specified as False.
+                if not arg:
+                    continue
+
+            # Skip empty values
+            if value is None:
+                continue
+
+            if isinstance(value, _WebserverSubclass):
+                value = "\n\t" + value.get_pretty_str(
+                    **kwargs
+                ).rstrip("\n").replace("\n", "\n\t")
+            elif isinstance(value, (list, tuple, set)):
+                # Skip empty values
+                if len(value) == 0:
+                    continue
+
+                new_value = "\n"
+                for element in value:
+                    if isinstance(element, _WebserverSubclass):
+                        new_value += "\t" + element.get_pretty_str(
+                            **kwargs
+                        ).rstrip("\n").replace("\n", "\n\t")
+                    else:
+                        new_value += f"\t{element}\n"
+
+                value = new_value.rstrip("\n")
+            pretty += self._get_attribute_pretty_str(attribute, value)
+        return pretty
+
+    # noinspection method-may-be-static
+    def _get_attribute_pretty_str(self, attribute: str, value: Any):
+        """Optional method for overriding the default pretty string formatting
+        for an attribute.
+
+        Parameters
+        ----------
+        attribute
+            Name of attribute.
+        value
+            Value of attribute.
+
+        Returns
+        -------
+        str
+            Formatted pretty string for the attribute.
+        """
+
+        return f"{attribute.replace("_", " ").title()}: {value}\n"
+
+
+@dataclass(frozen=True)
+class Evidence(_WebserverSubclass):
     evidence_code: str
     source: Database | None
     id: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             evidence_code=dictionary.pop("evidenceCode"),
@@ -219,7 +315,7 @@ class Evidence:
 
 
 @dataclass(frozen=True)
-class EntryAudit:
+class EntryAudit(_WebserverSubclass):
     first_public_date: date
     last_annotation_update_date: date
     last_sequence_update_date: date
@@ -227,7 +323,7 @@ class EntryAudit:
     sequence_version: int
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             first_public_date=date.fromisoformat(dictionary.pop("firstPublicDate")),
@@ -249,24 +345,24 @@ class EntryAudit:
 
 
 @dataclass(frozen=True)
-class Organism:
+class Organism(_WebserverSubclass):
     scientific_name: str
     taxon_id: int
-    evidences: tuple[Evidence, ...]
     lineage: tuple[str, ...]
+    evidences: tuple[Evidence, ...]
     common_name: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             scientific_name=dictionary.pop("scientificName"),
             taxon_id=int(dictionary.pop("taxonId")),
+            lineage=tuple(dictionary.pop("lineage")),
             evidences=tuple([
                 Evidence.from_dict(d)
                 for d in dictionary.pop("evidences", [])
             ]),
-            lineage=tuple(dictionary.pop("lineage")),
             common_name=dictionary.pop("commonName", None),
         )
         if len(dictionary) > 0:
@@ -276,15 +372,19 @@ class Organism:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Organism__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Value:
+class Value(_WebserverSubclass):
     value: str
     evidences: tuple[Evidence, ...]
     value_id: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             value=dictionary.pop("value"),
@@ -301,23 +401,26 @@ class Value:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Value__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Name:
+class Name(_WebserverSubclass):
     name_type: NameType
     full_name: Value
     short_names: tuple[Value, ...]
     ec_numbers: tuple[Value, ...]
 
     @classmethod
-    def from_dict(
-            cls,
-            dictionary: dict[str, Any],
-            name_type: NameType,
-    ):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
+        if "name_type" not in kwargs:
+            raise AttributeError("Missing requirement kwarg 'name_type'.")
+
         inst = cls(
-            name_type=name_type,
+            name_type=kwargs["name_type"],
             full_name=Value.from_dict(dictionary.pop("fullName")),
             short_names=tuple([
                 Value.from_dict(d)
@@ -335,9 +438,13 @@ class Name:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Name__ec_numbers", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class ProteinDescription:
+class ProteinDescription(_WebserverSubclass):
     recommended_name: Name | None
     submission_names: tuple[Name, ...]
     alternative_names: tuple[Name, ...]
@@ -345,7 +452,7 @@ class ProteinDescription:
     includes: tuple[tuple[Name, ...]]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         includes = dictionary.pop("includes", tuple())
         if len(includes) > 0:
@@ -358,7 +465,7 @@ class ProteinDescription:
                         case NameType.RECOMMENDED:
                             include_names.append(Name.from_dict(
                                 name_datas,
-                                name_type,
+                                name_type=name_type,
                             ))
                         case NameType.SUBMISSION \
                              | NameType.ALTERNATIVE:
@@ -366,8 +473,8 @@ class ProteinDescription:
                                 include_names.append(
                                     Name.from_dict(
                                         name_data,
-                                        name_type,
-                                    ))
+                                        name_type=name_type,
+                                ))
 
                 if len(current_include_names) > 0:
                     include_names.append(tuple(current_include_names))
@@ -377,14 +484,14 @@ class ProteinDescription:
         inst = cls(
             recommended_name=Name.from_dict(
                 dictionary.pop("recommendedName"),
-                NameType.RECOMMENDED,
+                name_type=NameType.RECOMMENDED
             ) if "recommendedName" in dictionary else None,
             alternative_names=tuple([
-                Name.from_dict(d, NameType.ALTERNATIVE)
+                Name.from_dict(d, name_type=NameType.ALTERNATIVE)
                 for d in dictionary.pop("alternativeNames", {})
             ]),
             submission_names=tuple([
-                Name.from_dict(d, NameType.SUBMISSION)
+                Name.from_dict(d, name_type=NameType.SUBMISSION)
                 for d in dictionary.pop("submissionNames", {})
             ]),
             flag=ProteinDescriptionFlag(dictionary.pop("flag")) \
@@ -400,14 +507,14 @@ class ProteinDescription:
 
 
 @dataclass(frozen=True)
-class Gene:
+class Gene(_WebserverSubclass):
     gene_name: Value | None
     ordered_locus_names: tuple[Value, ...]
     orf_names: tuple[Value, ...]
     synonyms: tuple[Value, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             gene_name=Value.from_dict(dictionary.pop("geneName")) \
@@ -434,13 +541,13 @@ class Gene:
 
 
 @dataclass(frozen=True)
-class SubcellularLocation:
+class SubcellularLocation(_WebserverSubclass):
     location: Value
     topology: Value | None
     orientation: Value | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             location=Value.from_dict(dictionary.pop("location")),
@@ -458,14 +565,14 @@ class SubcellularLocation:
 
 
 @dataclass(frozen=True)
-class CrossReference:
+class CrossReference(_WebserverSubclass):
     database: Database
     cross_reference_id: str
     properties: dict[str, str]
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             database=Database(dictionary.pop("database")),
@@ -486,16 +593,20 @@ class CrossReference:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("CrossReference__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Reaction:
+class Reaction(_WebserverSubclass):
     name: str
     cross_references: tuple[CrossReference, ...]
     evidences: tuple[Evidence, ...]
     ec_number: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             name=dictionary.pop("name"),
@@ -516,21 +627,24 @@ class Reaction:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Reaction__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Cofactor:
+class Cofactor(_WebserverSubclass):
     name: str
     cross_reference: CrossReference
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             name=dictionary.pop("name"),
             cross_reference=CrossReference.from_dict(
-                dictionary.pop("cofactorCrossReference")
-            ),
+                dictionary.pop("cofactorCrossReference")),
             evidences=tuple([
                 Evidence.from_dict(d)
                 for d in dictionary.pop("evidences", [])
@@ -543,16 +657,20 @@ class Cofactor:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Cofactor__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Velocity:
+class Velocity(_WebserverSubclass):
     velocity: float
     unit: str
     enzyme: str
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             velocity=float(dictionary.pop("velocity")),
@@ -570,16 +688,20 @@ class Velocity:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Velocity__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class MichaelisConstant:
+class MichaelisConstant(_WebserverSubclass):
     constant: float
     unit: str
     substrate: str
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             constant=float(dictionary.pop("constant")),
@@ -597,14 +719,18 @@ class MichaelisConstant:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("MichaelisConstant__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class KineticParameters:
+class KineticParameters(_WebserverSubclass):
     maximum_velocities: tuple[Velocity, ...]
     michaelis_constants: tuple[MichaelisConstant, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             maximum_velocities=tuple([
@@ -625,11 +751,11 @@ class KineticParameters:
 
 
 @dataclass(frozen=True)
-class TextsField:
+class TextsField(_WebserverSubclass):
     texts: tuple[Value, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             texts=tuple([
@@ -646,14 +772,14 @@ class TextsField:
 
 
 @dataclass(frozen=True)
-class SequenceCaution:
+class SequenceCaution(_WebserverSubclass):
     sequence_caution_type: SequenceCautionType
     sequence: str
     evidences: tuple[Evidence, ...]
     note: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             sequence_caution_type=SequenceCautionType(
@@ -673,15 +799,19 @@ class SequenceCaution:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("SequenceCaution__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Interactant:
+class Interactant(_WebserverSubclass):
     uniprotkb_accession: str
     int_act_id: str
     gene_name: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             uniprotkb_accession=dictionary.pop("uniProtKBAccession"),
@@ -697,22 +827,20 @@ class Interactant:
 
 
 @dataclass(frozen=True)
-class Interaction:
+class Interaction(_WebserverSubclass):
     interactant_one: Interactant
     interactant_two: Interactant
     number_of_experiments: int
     organism_differ: bool
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             interactant_one=Interactant.from_dict(
-                dictionary.pop("interactantOne")
-            ),
+                dictionary.pop("interactantOne")),
             interactant_two=Interactant.from_dict(
-                dictionary.pop("interactantTwo")
-            ),
+                dictionary.pop("interactantTwo")),
             number_of_experiments=int(dictionary.pop("numberOfExperiments")),
             organism_differ=bool(dictionary.pop("organismDiffer")),
         )
@@ -725,19 +853,18 @@ class Interaction:
 
 
 @dataclass(frozen=True)
-class PhysiologicalReaction:
+class PhysiologicalReaction(_WebserverSubclass):
     direction_type: DirectionType
     reaction_cross_reference: CrossReference
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             direction_type=DirectionType(dictionary.pop("directionType")),
             reaction_cross_reference=CrossReference.from_dict(
-                dictionary.pop("reactionCrossReference")
-            ),
+                dictionary.pop("reactionCrossReference")),
             evidences=tuple([
                 Evidence.from_dict(d)
                 for d in dictionary.pop("evidences", [])
@@ -750,9 +877,13 @@ class PhysiologicalReaction:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("PhysiologicalReaction__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Comment:
+class Comment(_WebserverSubclass):
     comment_type: CommentType
     texts: tuple[Value, ...]
     subcellular_locations: tuple[SubcellularLocation, ...]
@@ -766,7 +897,7 @@ class Comment:
     physiological_reactions: tuple[PhysiologicalReaction, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
 
         comment_type = CommentType(dictionary.pop("commentType"))
@@ -796,12 +927,10 @@ class Comment:
                 Cofactor.from_dict(d)
                 for d in dictionary.pop("cofactors", [])
             ]),
-            kinetic_parameters=KineticParameters.from_dict(
-                dictionary.pop("kineticParameters")
-            ) if "kineticParameters" in dictionary else None,
+            kinetic_parameters=KineticParameters.from_dict(dictionary.pop(
+                "kineticParameters")) if "kineticParameters" in dictionary else None,
             ph_dependence=TextsField.from_dict(
-                dictionary.pop("phDependence")
-            ) if "phDependence" in dictionary else None,
+                dictionary.pop("phDependence")) if "phDependence" in dictionary else None,
             note=TextsField.from_dict(dictionary.pop("note")) \
                 if "note" in dictionary else None,
             sequence_caution=sequence_caution,
@@ -823,12 +952,12 @@ class Comment:
 
 
 @dataclass(frozen=True)
-class LocationValue:
+class LocationValue(_WebserverSubclass):
     value: int
     modifier: LocationModifier
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             value=dictionary.pop("value"),
@@ -843,12 +972,12 @@ class LocationValue:
 
 
 @dataclass(frozen=True)
-class Location:
+class Location(_WebserverSubclass):
     start: LocationValue
     end: LocationValue
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             start=LocationValue.from_dict(dictionary.pop("start")),
@@ -863,14 +992,14 @@ class Location:
 
 
 @dataclass(frozen=True)
-class Ligand:
+class Ligand(_WebserverSubclass):
     ligand_name: str
     ligand_id: str | None
     label: str | None
     note: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             ligand_name=dictionary.pop("name"),
@@ -887,12 +1016,12 @@ class Ligand:
 
 
 @dataclass(frozen=True)
-class AlternativeSequence:
+class AlternativeSequence(_WebserverSubclass):
     original_sequence: Seq
     alternative_sequences: tuple[Seq]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         if len(dictionary) == 0:
             return None
 
@@ -912,7 +1041,7 @@ class AlternativeSequence:
 
 
 @dataclass(frozen=True)
-class Feature:
+class Feature(_WebserverSubclass):
     feature_type: FeatureType
     location: Location
     description: str
@@ -923,7 +1052,7 @@ class Feature:
     alternative_sequence: AlternativeSequence | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             feature_type=FeatureType(dictionary.pop("type")),
@@ -940,9 +1069,8 @@ class Feature:
             ]),
             ligand=Ligand.from_dict(dictionary.pop("ligand")) \
                 if "ligand" in dictionary else None,
-            alternative_sequence=AlternativeSequence.from_dict(
-                dictionary.pop("alternativeSequence")
-            ) if "alternativeSequence" in dictionary else None,
+            alternative_sequence=AlternativeSequence.from_dict(dictionary.pop(
+                "alternativeSequence")) if "alternativeSequence" in dictionary else None,
         )
         if len(dictionary) > 0:
             raise ValueError(
@@ -951,16 +1079,20 @@ class Feature:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Feature__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Keyword:
+class Keyword(_WebserverSubclass):
     name: str
     category: str
     keyword_id: str
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             name=dictionary.pop("name"),
@@ -978,9 +1110,13 @@ class Keyword:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Keyword__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Citation:
+class Citation(_WebserverSubclass):
     citation_id: str
     citation_type: CitationType
     authors: tuple[str]
@@ -996,7 +1132,7 @@ class Citation:
     address: str | None
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             citation_id=dictionary.pop("id"),
@@ -1026,13 +1162,13 @@ class Citation:
 
 
 @dataclass(frozen=True)
-class ReferenceComment:
+class ReferenceComment(_WebserverSubclass):
     reference_type: str
     value: str
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             reference_type=dictionary.pop("type"),
@@ -1049,9 +1185,13 @@ class ReferenceComment:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("ReferenceComment__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Reference:
+class Reference(_WebserverSubclass):
     reference_number: int
     citation: Citation
     reference_positions: tuple[str, ...]
@@ -1059,7 +1199,7 @@ class Reference:
     evidences: tuple[Evidence, ...]
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             reference_number=int(dictionary.pop("referenceNumber")),
@@ -1081,9 +1221,13 @@ class Reference:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Reference__evidences", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class Sequence:
+class Sequence(_WebserverSubclass):
     value: Seq
     length: int
     mol_weight: int
@@ -1091,7 +1235,7 @@ class Sequence:
     md5: str
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             value=Seq(dictionary.pop("value")),
@@ -1107,15 +1251,20 @@ class Sequence:
 
         return inst
 
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Sequence__crc64", False)
+        kwargs.setdefault("Sequence__md5", False)
+        return super().get_pretty_str(**kwargs)
+
 
 @dataclass(frozen=True)
-class ExtraAttributes:
+class ExtraAttributes(_WebserverSubclass):
     count_by_comment_type: dict[CommentType, int]
     count_by_feature_type: dict[FeatureType, int]
     uniparc_id: str
 
     @classmethod
-    def from_dict(cls, dictionary: dict[str, Any]):
+    def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
             count_by_comment_type={
@@ -1137,15 +1286,15 @@ class ExtraAttributes:
 
 
 @dataclass(frozen=True)
-class Protein:
+class Protein(_WebserverSubclass):
     entry_type: EntryType
     primary_accession: str
-    secondary_accessions: list[str]
+    secondary_accessions: tuple[str]
     uniprotkb_id: str
-    entry_audit: EntryAudit
     annotation_score: float
-    organism: Organism
     protein_existence: ProteinExistence
+    entry_audit: EntryAudit
+    organism: Organism
     protein_description: ProteinDescription
     genes: tuple[Gene, ...]
     comments: tuple[Comment, ...]
@@ -1156,52 +1305,92 @@ class Protein:
     sequence: Sequence
     extra_attributes: ExtraAttributes
 
+    @property
+    def alternative_names(self) -> list[str]:
+        """All alternative names for this protein.
+
+        Includes `gene.gene_name` and all `gene.synonyms`.
+        """
+
+        alternative_names = set()
+        for gene in self.genes:
+            if gene.gene_name:
+                alternative_names.add(gene.gene_name.value)
+            for synonym in gene.synonyms:
+                alternative_names.add(synonym.value)
+
+        return sorted(alternative_names)
+
+    @property
+    def aa_seq(self) -> Seq:
+        """Wrapper for amino acid sequence found at `self.sequence.value`."""
+
+        return self.sequence.value
+
+    @property
+    def uniprotkb_url(self):
+        return f"{ROOT_UNIPROT_URL}/uniprotkb/{self.primary_accession}"
+
     @classmethod
-    def from_uniprot_search_result(cls, result: dict):
-        result = copy.deepcopy(result)
+    def from_dict(cls, dictionary: dict, **kwargs):
+        dictionary = copy.deepcopy(dictionary)
         inst = cls(
-            entry_type=EntryType(result.pop("entryType")),
-            primary_accession=result.pop("primaryAccession"),
-            secondary_accessions=result.pop("secondaryAccessions", []),
-            uniprotkb_id=result.pop("uniProtkbId"),
-            entry_audit=EntryAudit.from_dict(result.pop("entryAudit")),
-            annotation_score=result.pop("annotationScore"),
-            organism=Organism.from_dict(result.pop("organism")),
+            entry_type=EntryType(dictionary.pop("entryType")),
+            primary_accession=dictionary.pop("primaryAccession"),
+            secondary_accessions=tuple(dictionary.pop("secondaryAccessions", [])),
+            uniprotkb_id=dictionary.pop("uniProtkbId"),
+            entry_audit=EntryAudit.from_dict(dictionary.pop("entryAudit")),
+            annotation_score=dictionary.pop("annotationScore"),
+            organism=Organism.from_dict(dictionary.pop("organism")),
             protein_existence=ProteinExistence(
-                result.pop("proteinExistence")
+                dictionary.pop("proteinExistence")
             ),
             protein_description=ProteinDescription.from_dict(
-                result.pop("proteinDescription")
-            ),
+                dictionary.pop("proteinDescription")),
             genes=tuple([
-                Gene.from_dict(d) for d in result.pop("genes", [])
+                Gene.from_dict(d) for d in dictionary.pop("genes", [])
             ]),
             comments=tuple([
-                Comment.from_dict(d) for d in result.pop("comments", [])
+                Comment.from_dict(d) for d in dictionary.pop("comments", [])
             ]),
             features=tuple([
-                Feature.from_dict(d) for d in result.pop("features", [])
+                Feature.from_dict(d) for d in dictionary.pop("features", [])
             ]),
             keywords=tuple([
-                Keyword.from_dict(d) for d in result.pop("keywords", [])
+                Keyword.from_dict(d) for d in dictionary.pop("keywords", [])
             ]),
             references=tuple([
                 Reference.from_dict(d)
-                for d in result.pop("references", [])
+                for d in dictionary.pop("references", [])
             ]),
             uniprotkb_cross_references=tuple([
                 CrossReference.from_dict(d)
-                for d in result.pop("uniProtKBCrossReferences", [])
+                for d in dictionary.pop("uniProtKBCrossReferences", [])
             ]),
-            sequence=Sequence.from_dict(result.pop("sequence")),
+            sequence=Sequence.from_dict(dictionary.pop("sequence")),
             extra_attributes=ExtraAttributes.from_dict(
-                result.pop("extraAttributes")
-            ),
+                dictionary.pop("extraAttributes")),
         )
-        if len(result) > 0:
-            raise ValueError(f"Remaining data:\n{json.dumps(result, indent=2)}")
+        if len(dictionary) > 0:
+            raise ValueError(
+                f"Remaining data:\n{json.dumps(dictionary, indent=2)}"
+            )
 
         return inst
+
+    def get_pretty_str(self, **kwargs) -> str:
+        kwargs.setdefault("Protein__entry_audit", False)
+        kwargs.setdefault("Protein__organism", True)
+        kwargs.setdefault("Protein__protein_description", True)
+        kwargs.setdefault("Protein__genes", True)
+        kwargs.setdefault("Protein__comments", False)
+        kwargs.setdefault("Protein__features", False)
+        kwargs.setdefault("Protein__keywords", False)
+        kwargs.setdefault("Protein__references", False)
+        kwargs.setdefault("Protein__uniprotkb_cross_references", False)
+        kwargs.setdefault("Protein__sequence", True)
+        kwargs.setdefault("Protein__extra_attributes", False)
+        return super().get_pretty_str(**kwargs)
 
 
 def get_all_uniprot_tp_proteins() -> list[Protein]:
@@ -1213,15 +1402,6 @@ def get_all_uniprot_tp_proteins() -> list[Protein]:
 
     proteins: list[Protein] = []
     for result in uniprot_results:
-        proteins.append(Protein.from_uniprot_search_result(result))
+        proteins.append(Protein.from_dict(result))
 
     return proteins
-
-
-def main():
-    proteins = get_all_uniprot_tp_proteins()
-    print(len(proteins))
-
-
-if __name__ == "__main__":
-    main()
