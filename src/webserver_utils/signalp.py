@@ -7,7 +7,7 @@ from functools import cached_property
 from pathlib import Path
 
 import pandas as pd
-import gffpandas as gffpd
+import gffpandas.gffpandas as gffpd
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
