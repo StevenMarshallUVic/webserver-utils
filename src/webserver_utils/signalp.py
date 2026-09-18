@@ -14,8 +14,19 @@ from Bio.SeqRecord import SeqRecord
 
 
 class SignalPeptideType(StrEnum):
-    SIGNAL_PEPTIDE = "Signal Peptide (Sec/SPI)"
-    LIPOPROTEIN_SIGNAL_PEPTIDE = "Lipoprotein signal peptide (Sec/SPII)"
+    # noinspection PyTypeChecker
+    SIGNAL_PEPTIDE = ("signal_peptide", "Signal Peptide (Sec/SPI)")
+    # noinspection PyTypeChecker
+    LIPOPROTEIN_SIGNAL_PEPTIDE = (
+        "lipoprotein_signal_peptide",
+        "Lipoprotein signal peptide (Sec/SPII)"
+    )
+
+    def __new__(cls, value: str, display_name: str):
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        obj.display_name = display_name
+        return obj
 
 
 @dataclass(frozen=True)
