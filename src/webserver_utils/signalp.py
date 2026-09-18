@@ -1,4 +1,3 @@
-import io
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -56,64 +55,53 @@ class SignalPeptide:
     probability: float
     cleaved_sequence: Seq
 
+    @classmethod
+    def from_signalp_output_df_row(cls, row: pd.Series, **kwargs):
+        return cls(
+            protein_id=row["seq_id"],
+            peptide_type=SignalPeptideType(row["type"]),
+            start_index=row["start"],
+            end_index=row["end"],
+            probability=row["score"],
+            **kwargs
+        )
 
+
+@dataclass(frozen=True)
 class SignalPResults:
-    """Handles processing SignalP 6.0 results."""
+    """Handles processing SignalP 6.0 results.
 
-    _results_zip: Path
+    Attributes
+    ----------
+    output_df
+        Output results table.
+    processed_entries
+        Sequences with signal peptides removed.
+    """
 
-    _output_gff3_name = "output.gff3"
-    _processed_entries_fasta_name = "processed_entries.fasta"
-
-    @cached_property
-    def output_df(self) -> pd.DataFrame:
-        """Output results table."""
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with zipfile.ZipFile(self._results_zip, "r") as zf:
-                zf.extract(self._output_gff3_name, temp_dir)
-                extracted_gff3 = Path(temp_dir) / self._output_gff3_name
-                return gffpd.read_gff3(extracted_gff3).df
-
-    @cached_property
-    def processed_entries(self) -> list[SeqRecord]:
-        """Sequences with signal peptides removed."""
-
-        with zipfile.ZipFile(self._results_zip, "r") as zf:
-            with zf.open(
-                    self._processed_entries_fasta_name,
-                    "r"
-            ) as fasta:
-                return list(
-                    SeqIO.parse(
-                        io.TextIOWrapper(
-                            fasta,
-                            encoding="utf-8"
-                        ),
-                        "fasta"
-                    )
-                )
+    output_df: pd.DataFrame
+    processed_entries: tuple[SeqRecord, ...]
 
     @cached_property
     def signal_peptides(self) -> list[SignalPeptide]:
         """Signal peptides found in results."""
 
-        df = self.output_df
         signal_peptides = []
         for record in self.processed_entries:
             protein_id = record.description
-            protein_df = df.loc[df["seq_id"] == protein_id]
+            protein_df = self.output_df.loc[
+                self.output_df["seq_id"] == protein_id
+            ]
             if len(protein_df) == 0:
                 raise ValueError(
                     f"Could not find protein in output files: '{protein_id}'."
                 )
             if len(protein_df) > 1:
                 raise ValueError(
-                    f"Multiple proteins in output files with ID: "
+                    f"Multiple rows in output files with ID: "
                     f"'{protein_id}'."
                 )
 
-            protein = protein_df.iloc[0]
             cleaved_sequence = record.seq
             if not isinstance(cleaved_sequence, Seq):
                 raise TypeError(
@@ -121,14 +109,12 @@ class SignalPResults:
                     f"Got: {type(cleaved_sequence)}: {cleaved_sequence}."
                 )
 
-            signal_peptides.append(SignalPeptide(
-                protein_id=protein_id,
-                peptide_type=SignalPeptideType(protein["type"]),
-                start_index=protein["start"],
-                end_index=protein["end"],
-                probability=protein["score"],
-                cleaved_sequence=cleaved_sequence,
-            ))
+            signal_peptides.append(
+                SignalPeptide.from_signalp_output_df_row(
+                    row=protein_df.iloc[0],
+                    cleaved_sequence=cleaved_sequence,
+                )
+            )
 
         return signal_peptides
 
@@ -147,13 +133,46 @@ class SignalPResults:
             protein_id_to_signal_peptides[peptide.protein_id] = peptide
         return protein_id_to_signal_peptides
 
-    def __init__(self, results_zip: Path):
+    @classmethod
+    def from_signalp_results_files(
+            cls,
+            output_gff3: Path,
+            processed_entries_fasta: Path,
+    ):
+        if not output_gff3.is_file():
+            raise FileNotFoundError(
+                f"Could not find output GFF3 file at '{output_gff3}'."
+            )
+        if not processed_entries_fasta.is_file():
+            raise FileNotFoundError(
+                f"Could not find processed entries FASTA at "
+                f"'{processed_entries_fasta}'."
+            )
+
+        return cls(
+            output_df=gffpd.read_gff3(output_gff3).df,
+            processed_entries=tuple(list(
+                SeqIO.parse(processed_entries_fasta, "fasta")
+            ))
+        )
+
+    @classmethod
+    def from_signalp_results_zip(
+            cls,
+            results_zip: Path,
+            output_gff3_name="output.gff3",
+            processed_entries_fasta_name="processed_entries.fasta",
+    ):
         """Create instance.
 
         Parameters
         ----------
         results_zip
             Path to zip archive containing SignalP results.
+        output_gff3_name
+            Name of output gff3 file found in SignalP results zip.
+        processed_entries_fasta_name
+            Name of preprocessed entries FASTA found in SignalP results zip.
         """
 
         if not results_zip.is_file():
@@ -164,4 +183,15 @@ class SignalPResults:
         if results_zip.suffix != ".zip":
             raise TypeError(f"Expected zip file, got '{results_zip}'.")
 
-        self._results_zip = results_zip
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with zipfile.ZipFile(results_zip, "r") as zf:
+                zf.extract(output_gff3_name, temp_dir)
+                zf.extract(processed_entries_fasta_name, temp_dir)
+
+                extracted_gff3 = Path(temp_dir) / output_gff3_name
+                extracted_fasta = Path(temp_dir) / processed_entries_fasta_name
+                return cls.from_signalp_results_files(
+                    extracted_gff3,
+                    extracted_fasta
+                )
