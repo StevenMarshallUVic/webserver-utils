@@ -73,7 +73,7 @@ class SignalPResults:
         """Sequences with signal peptides removed."""
 
         with zipfile.ZipFile(self._results_zip, "r") as zf:
-            with zf.open(self._processed_entries_fasta, "r") as fasta:
+            with zf.open(str(self.processed_entries_fasta), "r") as fasta:
                 return list(
                     SeqIO.parse(
                         io.TextIOWrapper(
