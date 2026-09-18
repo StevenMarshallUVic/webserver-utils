@@ -51,12 +51,7 @@ class SignalPResults:
     _results_zip: Path
 
     _output_gff3_name = "output.gff3"
-
-    @property
-    def processed_entries_fasta(self) -> Path:
-        """Path to FASTA containing sequences with signal peptides removed."""
-
-        return self._results_zip / "processed_entries.fasta"
+    _processed_entries_fasta_name = "processed_entries.fasta"
 
     @cached_property
     def output_df(self) -> pd.DataFrame:
@@ -73,7 +68,10 @@ class SignalPResults:
         """Sequences with signal peptides removed."""
 
         with zipfile.ZipFile(self._results_zip, "r") as zf:
-            with zf.open(str(self.processed_entries_fasta), "r") as fasta:
+            with zf.open(
+                    self._processed_entries_fasta_name,
+                    "r"
+            ) as fasta:
                 return list(
                     SeqIO.parse(
                         io.TextIOWrapper(
