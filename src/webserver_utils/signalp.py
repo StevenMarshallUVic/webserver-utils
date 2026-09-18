@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 import gffpandas.gffpandas as gffpd
+from Bio import SeqIO
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
