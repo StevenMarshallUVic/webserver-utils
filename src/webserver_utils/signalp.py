@@ -1,4 +1,6 @@
+import io
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import cached_property
@@ -71,7 +73,15 @@ class SignalPResults:
 
         with zipfile.ZipFile(self._results_zip, "r") as zf:
             with zf.open(self._processed_entries_fasta, "r") as fasta:
-                return list(SeqIO.parse(io.TextIOWrapper(fasta, encoding="utf-8"), "fasta"))
+                return list(
+                    SeqIO.parse(
+                        io.TextIOWrapper(
+                            fasta,
+                            encoding="utf-8"
+                        ),
+                        "fasta"
+                    )
+                )
 
     @cached_property
     def signal_peptides(self) -> list[SignalPeptide]:
