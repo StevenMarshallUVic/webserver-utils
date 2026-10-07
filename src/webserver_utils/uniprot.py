@@ -10,6 +10,7 @@ from typing import Any, Self
 
 from Bio import UniProt
 from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
 
 logger = logging.getLogger(Path(__file__).name)
 
@@ -1329,7 +1330,18 @@ class Protein(_WebserverSubclass):
 
     @property
     def uniprotkb_url(self):
+        """URL to UniProt webpage where this protein can be found."""
         return f"{ROOT_UNIPROT_URL}/uniprotkb/{self.primary_accession}"
+
+    @property
+    def as_seqrecord(self) -> SeqRecord:
+        """Convert to a SeqRecord, using `primary_accession` as the id."""
+        return SeqRecord(
+            id=self.primary_accession,
+            name="",
+            description="",
+            seq=self.aa_seq,
+        )
 
     @classmethod
     def from_dict(cls, dictionary: dict, **kwargs):
