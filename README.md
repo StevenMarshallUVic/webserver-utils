@@ -3,6 +3,7 @@ Utilities for working with proteomics and bioinformatics webservers, programs, a
 
 ## Webservers
 Currently included webservers include:
+- [BLAST](https://blast.ncbi.nlm.nih.gov/Blast.cgi)
 - [SignalP (6.0)](https://services.healthtech.dtu.dk/services/SignalP-6.0/)
 - [UniProt](https://www.uniprot.org/)
 
