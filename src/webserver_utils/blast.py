@@ -261,7 +261,7 @@ class BlastSearcher:
         See `_blast()` method signature for arguments.
         """
 
-        return self._blast(blast_program=BlastProgram.BLASTN, *args, **kwargs)
+        return self._blast(*args, blast_program=BlastProgram.BLASTN, **kwargs)
 
     def blastp(self, *args, **kwargs):
         """Compare protein queries against a protein database.
@@ -269,7 +269,7 @@ class BlastSearcher:
         See `_blast()` method signature for arguments.
         """
 
-        return self._blast(blast_program=BlastProgram.BLASTP, *args, **kwargs)
+        return self._blast(*args, blast_program=BlastProgram.BLASTP, **kwargs)
 
     def blastx(self, *args, **kwargs):
         """Compare nucleotide queries (translated in 6 frames)
@@ -277,7 +277,7 @@ class BlastSearcher:
 
         See `_blast()` method signature for arguments.
         """
-        return self._blast(blast_program=BlastProgram.BLASTX, *args, **kwargs)
+        return self._blast(*args, blast_program=BlastProgram.BLASTX, **kwargs)
 
     def tblastn(self, *args, **kwargs):
         """Compare protein queries against a nucleotide database
@@ -285,7 +285,7 @@ class BlastSearcher:
 
         See `_blast()` method signature for arguments.
         """
-        return self._blast(blast_program=BlastProgram.TBLASTN, *args, **kwargs)
+        return self._blast(*args, blast_program=BlastProgram.TBLASTN, **kwargs)
 
     def tblastx(self, *args, **kwargs):
         """Compare translated nucleotide queries against a translated
@@ -293,7 +293,7 @@ class BlastSearcher:
 
         See `_blast()` method signature for arguments.
         """
-        return self._blast(blast_program=BlastProgram.TBLASTX, *args, **kwargs)
+        return self._blast(*args, blast_program=BlastProgram.TBLASTX, **kwargs)
 
 
 if __name__ == "__main__":
