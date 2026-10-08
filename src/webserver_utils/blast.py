@@ -85,8 +85,9 @@ class BlastSearcher:
         (Optional) Number of threads to use for performing BLAST searches.
         When not specified, uses all available CPUs.
     parse_seqids
-        (Optional) Whether to retain and index the original sequence
-        identifiers from `database_records` inside the generated database.
+        (Optional) Whether BLAST should strip input identifiers and
+        restructure them into standard NCBI/UniProt identifiers,
+        such as adding `sp|` prefixes before UniProt entry IDs.
     taxid
         (Optional) Taxonomy ID to assign to all sequences.
     """
@@ -97,7 +98,7 @@ class BlastSearcher:
     database_title: str = "BLAST Database"
     database_prefix: str = "database"
     num_threads: int = os.cpu_count() or 1
-    parse_seqids: bool = True
+    parse_seqids: bool = False
     taxid: int | None = None
     verbose: bool = False
 
@@ -278,7 +279,7 @@ class BlastSearcher:
                 )
 
         logger.debug(
-            "Running '%s' for %s sequences against database '%s'...",
+            "Running %s for %s sequences against database '%s'...",
             blast_program.value,
             len(list(SeqIO.parse(query_fasta, "fasta"))),
             self.database_title,
