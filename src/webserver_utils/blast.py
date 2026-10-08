@@ -1,3 +1,9 @@
+"""NCBI BLAST.
+
+TODO: Use BLAST's multithreading flag
+    TODO: Add attribute to specify threads to use (with default of all threads?)
+"""
+
 import logging
 import subprocess
 from dataclasses import dataclass
@@ -92,6 +98,7 @@ class BlastSearcher:
     database_prefix: str = "database"
     parse_seqids: bool = True
     taxid: int | None = None
+    verbose: bool = False
 
     _input_type: InputType = InputType.FASTA
     _temp_dir = TemporaryDirectory()
@@ -134,11 +141,45 @@ class BlastSearcher:
         # Do not suppress exceptions
         return False
 
-    def _cleanup(self):
-        """Cleanup temp directory."""
+    def blastn(self, **kwargs):
+        """Compare nucleotide queries against a nucleotide database.
 
-        if hasattr(self, "_temp_dir"):
-            self._temp_dir.cleanup()
+        See `_blast()` method signature for arguments.
+        """
+
+        return self._blast(blast_program=BlastProgram.BLASTN, **kwargs)
+
+    def blastp(self, **kwargs):
+        """Compare protein queries against a protein database.
+
+        See `_blast()` method signature for arguments.
+        """
+
+        return self._blast(blast_program=BlastProgram.BLASTP, **kwargs)
+
+    def blastx(self, **kwargs):
+        """Compare nucleotide queries (translated in 6 frames)
+        against a protein database.
+
+        See `_blast()` method signature for arguments.
+        """
+        return self._blast(blast_program=BlastProgram.BLASTX, **kwargs)
+
+    def tblastn(self, **kwargs):
+        """Compare protein queries against a nucleotide database
+        (translated in 6 frames).
+
+        See `_blast()` method signature for arguments.
+        """
+        return self._blast(blast_program=BlastProgram.TBLASTN, **kwargs)
+
+    def tblastx(self, **kwargs):
+        """Compare translated nucleotide queries against a translated
+        nucleotide database.
+
+        See `_blast()` method signature for arguments.
+        """
+        return self._blast(blast_program=BlastProgram.TBLASTX, **kwargs)
 
     def _generate_database(self) -> None:
         """Create BLAST database for `database_records`."""
@@ -174,7 +215,7 @@ class BlastSearcher:
             args.append("-parse_seqids")
         if self.taxid is not None:
             args.extend(["-taxid", str(self.taxid)])
-        subprocess.run(args, check=True)
+        self._run_subprocess_for_args(args)
 
         if not self._database_dir.is_dir():
             raise NotADirectoryError(
@@ -242,7 +283,7 @@ class BlastSearcher:
             "-out", results_path,
             "-outfmt", str(output_format.outfmt),
         ]
-        subprocess.run(args, check=True)
+        self._run_subprocess_for_args(args)
 
         if output_format.searchio_format is None:
             logger.info(
@@ -255,45 +296,31 @@ class BlastSearcher:
 
         return SearchIO.parse(results_path, output_format.searchio_format)
 
-    def blastn(self, **kwargs):
-        """Compare nucleotide queries against a nucleotide database.
+    def _run_subprocess_for_args(self, args) -> None:
+        try:
+            result = subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            if self.verbose:
+                if result.stdout:
+                    print(f"STDOUT:\n{result.stdout}")
+                if result.stderr:
+                    print(f"STDERR:\n{result.stderr}")
 
-        See `_blast()` method signature for arguments.
-        """
+        except subprocess.CalledProcessError as e:
+            print(f"Error occurred: {e}")
+            print(f"STDOUT:\n{e.stdout}")
+            print(f"STDERR:\n{e.stderr}")
+            raise e
 
-        return self._blast(blast_program=BlastProgram.BLASTN, **kwargs)
+    def _cleanup(self):
+        """Cleanup temp directory."""
 
-    def blastp(self, **kwargs):
-        """Compare protein queries against a protein database.
-
-        See `_blast()` method signature for arguments.
-        """
-
-        return self._blast(blast_program=BlastProgram.BLASTP, **kwargs)
-
-    def blastx(self, **kwargs):
-        """Compare nucleotide queries (translated in 6 frames)
-        against a protein database.
-
-        See `_blast()` method signature for arguments.
-        """
-        return self._blast(blast_program=BlastProgram.BLASTX, **kwargs)
-
-    def tblastn(self, **kwargs):
-        """Compare protein queries against a nucleotide database
-        (translated in 6 frames).
-
-        See `_blast()` method signature for arguments.
-        """
-        return self._blast(blast_program=BlastProgram.TBLASTN, **kwargs)
-
-    def tblastx(self, **kwargs):
-        """Compare translated nucleotide queries against a translated
-        nucleotide database.
-
-        See `_blast()` method signature for arguments.
-        """
-        return self._blast(blast_program=BlastProgram.TBLASTX, **kwargs)
+        if hasattr(self, "_temp_dir"):
+            self._temp_dir.cleanup()
 
 
 if __name__ == "__main__":
