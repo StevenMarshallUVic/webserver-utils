@@ -1,10 +1,7 @@
-"""NCBI BLAST.
-
-TODO: Use BLAST's multithreading flag
-    TODO: Add attribute to specify threads to use (with default of all threads?)
-"""
+"""NCBI BLAST."""
 
 import logging
+import os
 import subprocess
 from dataclasses import dataclass
 from enum import StrEnum, Enum
@@ -84,6 +81,9 @@ class BlastSearcher:
         (Optional) Custom name for the BLAST database.
     database_prefix
         (Optional) Prefix to use for BLAST database file names.
+    num_threads
+        (Optional) Number of threads to use for performing BLAST searches.
+        When not specified, uses all available CPUs.
     parse_seqids
         (Optional) Whether to retain and index the original sequence
         identifiers from `database_records` inside the generated database.
@@ -96,6 +96,7 @@ class BlastSearcher:
     database_type: DatabaseType = DatabaseType.PROTEIN
     database_title: str = "BLAST Database"
     database_prefix: str = "database"
+    num_threads: int = os.cpu_count() or 1
     parse_seqids: bool = True
     taxid: int | None = None
     verbose: bool = False
@@ -276,12 +277,20 @@ class BlastSearcher:
                     f"BLAST results already found at '{results_path}'."
                 )
 
+        logger.debug(
+            "Running '%s' for %s sequences against database '%s'...",
+            blast_program.value,
+            len(list(SeqIO.parse(query_fasta, "fasta"))),
+            self.database_title,
+        )
+
         args = [
             blast_program.value,
             "-query", query_fasta,
             "-db", self._database_path,
             "-out", results_path,
             "-outfmt", str(output_format.outfmt),
+            "-num_threads", str(self.num_threads),
         ]
         self._run_subprocess_for_args(args)
 
