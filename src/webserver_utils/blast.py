@@ -255,45 +255,45 @@ class BlastSearcher:
 
         return SearchIO.parse(results_path, output_format.searchio_format)
 
-    def blastn(self, *args, **kwargs):
+    def blastn(self, **kwargs):
         """Compare nucleotide queries against a nucleotide database.
 
         See `_blast()` method signature for arguments.
         """
 
-        return self._blast(*args, blast_program=BlastProgram.BLASTN, **kwargs)
+        return self._blast(blast_program=BlastProgram.BLASTN, **kwargs)
 
-    def blastp(self, *args, **kwargs):
+    def blastp(self, **kwargs):
         """Compare protein queries against a protein database.
 
         See `_blast()` method signature for arguments.
         """
 
-        return self._blast(*args, blast_program=BlastProgram.BLASTP, **kwargs)
+        return self._blast(blast_program=BlastProgram.BLASTP, **kwargs)
 
-    def blastx(self, *args, **kwargs):
+    def blastx(self, **kwargs):
         """Compare nucleotide queries (translated in 6 frames)
         against a protein database.
 
         See `_blast()` method signature for arguments.
         """
-        return self._blast(*args, blast_program=BlastProgram.BLASTX, **kwargs)
+        return self._blast(blast_program=BlastProgram.BLASTX, **kwargs)
 
-    def tblastn(self, *args, **kwargs):
+    def tblastn(self, **kwargs):
         """Compare protein queries against a nucleotide database
         (translated in 6 frames).
 
         See `_blast()` method signature for arguments.
         """
-        return self._blast(*args, blast_program=BlastProgram.TBLASTN, **kwargs)
+        return self._blast(blast_program=BlastProgram.TBLASTN, **kwargs)
 
-    def tblastx(self, *args, **kwargs):
+    def tblastx(self, **kwargs):
         """Compare translated nucleotide queries against a translated
         nucleotide database.
 
         See `_blast()` method signature for arguments.
         """
-        return self._blast(*args, blast_program=BlastProgram.TBLASTX, **kwargs)
+        return self._blast(blast_program=BlastProgram.TBLASTX, **kwargs)
 
 
 if __name__ == "__main__":
