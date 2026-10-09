@@ -11,3 +11,6 @@ Planned additions include:
 - [AlphaFold Protein Structure Database](https://alphafold.ebi.ac.uk/)
 - [NCBI](https://www.ncbi.nlm.nih.gov/)
 - [RCSB PDB](https://www.rcsb.org/)
+
+## Requirements
+Requires Python 3.15 due to use of `frozendict`.
