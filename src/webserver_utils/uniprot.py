@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Self
 
 from Bio import UniProt
@@ -569,7 +570,7 @@ class SubcellularLocation(_WebserverSubclass):
 class CrossReference(_WebserverSubclass):
     database: Database
     cross_reference_id: str
-    properties: dict[str, str]
+    properties: MappingProxyType[str, str]
     evidences: tuple[Evidence, ...]
 
     @classmethod
@@ -578,10 +579,10 @@ class CrossReference(_WebserverSubclass):
         inst = cls(
             database=Database(dictionary.pop("database")),
             cross_reference_id=dictionary.pop("id"),
-            properties={
+            properties=MappingProxyType({
                 item["key"]: item["value"]
                 for item in dictionary.pop("properties", [])
-            },
+            }),
             evidences=tuple([
                 Evidence.from_dict(d)
                 for d in dictionary.pop("evidences", [])
@@ -1260,22 +1261,22 @@ class Sequence(_WebserverSubclass):
 
 @dataclass(frozen=True)
 class ExtraAttributes(_WebserverSubclass):
-    count_by_comment_type: dict[CommentType, int]
-    count_by_feature_type: dict[FeatureType, int]
+    count_by_comment_type: MappingProxyType[CommentType, int]
+    count_by_feature_type: MappingProxyType[FeatureType, int]
     uniparc_id: str
 
     @classmethod
     def from_dict(cls, dictionary: dict[str, Any], **kwargs):
         dictionary = copy.deepcopy(dictionary)
         inst = cls(
-            count_by_comment_type={
+            count_by_comment_type=MappingProxyType({
                 CommentType(k): v
                 for k, v in dictionary.pop("countByCommentType",{}).items()
-            },
-            count_by_feature_type={
+            }),
+            count_by_feature_type=MappingProxyType({
                 FeatureType(k): v
                 for k, v in dictionary.pop("countByFeatureType", {}).items()
-            },
+            }),
             uniparc_id=dictionary.pop("uniParcId"),
         )
         if len(dictionary) > 0:
