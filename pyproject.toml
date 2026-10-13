@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sm_webserver_utils"
-version = "2.1.0"
+version = "2.1.1"
 requires-python = ">=3.15"
 authors = [
   { name="Steven Marshall", email="stevenmarshall@uvic.ca" },

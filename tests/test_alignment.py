@@ -26,55 +26,55 @@ test_records: tuple[SeqRecord, ...] = tuple([
 ])
 
 
-def test_no_records():
+def test_clustal_omega_no_records():
     with pytest.raises(ValueError):
-        ClustalOmegaAligner().clustal_omega_align_records([])
+        ClustalOmegaAligner().align_records([])
 
 
-def test_one_record():
+def test_clustal_omega_one_record():
     with pytest.raises(ValueError):
-        ClustalOmegaAligner().clustal_omega_align_records([test_records[0]])
+        ClustalOmegaAligner().align_records([test_records[0]])
 
 
-def test_non_existent_fasta():
+def test_clustal_omega_non_existent_fasta():
     with pytest.raises(FileNotFoundError):
-        ClustalOmegaAligner().write_clustal_omega_alignment(Path(), Path())
+        ClustalOmegaAligner().write_alignment(Path(), Path())
 
 
-def test_alignment_exists_no_force(tmp_path):
+def test_clustal_omega_alignment_exists_no_force(tmp_path):
     fasta = tmp_path / "test.fasta"
     SeqIO.write(test_records, fasta, "fasta")
 
     alignment = tmp_path / "alignment.afa"
-    ClustalOmegaAligner().write_clustal_omega_alignment(fasta, alignment)
+    ClustalOmegaAligner().write_alignment(fasta, alignment)
     with pytest.raises(
             CalledProcessError,
             match="FATAL: Cowardly refusing to overwrite already existing file"
     ):
-        ClustalOmegaAligner().write_clustal_omega_alignment(fasta, alignment)
+        ClustalOmegaAligner().write_alignment(fasta, alignment)
 
 
-def test_write_alignment(tmp_path):
+def test_clustal_omega_write_alignment(tmp_path):
     fasta = tmp_path / "test.fasta"
     SeqIO.write(test_records, fasta, "fasta")
 
     alignment = tmp_path / "alignment.afa"
-    ClustalOmegaAligner().write_clustal_omega_alignment(fasta, alignment)
+    ClustalOmegaAligner().write_alignment(fasta, alignment)
 
     assert alignment.is_file()
     assert len(list(SeqIO.parse(alignment, "clustal"))) == len(test_records)
 
 
-def test_align_fasta(tmp_path):
+def test_clustal_omega_align_fasta(tmp_path):
     fasta = tmp_path / "test.fasta"
     SeqIO.write(test_records, fasta, "fasta")
 
-    alignment = ClustalOmegaAligner().clustal_omega_align_fasta(fasta)
+    alignment = ClustalOmegaAligner().align_fasta(fasta)
 
     assert len(alignment) == len(test_records)
 
 
-def test_align_records():
-    alignment = ClustalOmegaAligner().clustal_omega_align_records(test_records)
+def test_clustal_omega_align_records():
+    alignment = ClustalOmegaAligner().align_records(test_records)
 
     assert len(alignment) == len(test_records)

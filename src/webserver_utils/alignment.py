@@ -42,7 +42,7 @@ class ClustalOmegaAligner:
                 f"Are you sure it is installed?"
             )
 
-    def write_clustal_omega_alignment(
+    def write_alignment(
             self,
             input_fasta: Path,
             output_aln: Path,
@@ -96,19 +96,19 @@ class ClustalOmegaAligner:
             e.add_note(f"Error running Clustal Omega: {e.stderr.decode()}")
             raise e
 
-    def clustal_omega_align_fasta(
+    def align_fasta(
             self,
             input_fasta: Path,
     ) -> MultipleSeqAlignment:
         with TemporaryDirectory() as tmp_dir:
             alignment = Path(tmp_dir) / "alignment.afa"
-            self.write_clustal_omega_alignment(
+            self.write_alignment(
                 input_fasta,
                 alignment,
             )
             return AlignIO.read(alignment, "clustal")
 
-    def clustal_omega_align_records(
+    def align_records(
             self,
             records: Collection[SeqRecord],
     ) -> MultipleSeqAlignment:
@@ -121,4 +121,4 @@ class ClustalOmegaAligner:
         with TemporaryDirectory() as tmp_dir:
             fasta = Path(tmp_dir) / "input.fasta"
             SeqIO.write(records, fasta, "fasta-2line")
-            return self.clustal_omega_align_fasta(fasta)
+            return self.align_fasta(fasta)
