@@ -3,15 +3,15 @@
 import logging
 import os
 import subprocess
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 from enum import StrEnum, Enum
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import Generator, Iterable
 
 from Bio import SearchIO, SeqIO
 # noinspection protected-member
-from Bio.SearchIO._model.query import QueryResult
+from Bio.SearchIO import Hit, QueryResult
 from Bio.SeqRecord import SeqRecord
 
 logger = logging.getLogger(Path(__file__).name)
@@ -38,7 +38,7 @@ class BlastProgram(StrEnum):
 
 
 class OutputFormat(Enum):
-    PAIRWISE = (0, "blast-text")
+    PAIRWISE = (0, None)
     QUERY_ANCHORED_SHOW_IDENTITIES = (1, None)
     QUERY_ANCHORED_NO_IDENTITIES = (2, None)
     FLAT_QUERY_ANCHORED_SHOW_IDENTITIES = (3, None)
@@ -187,7 +187,7 @@ class BlastSearcher:
         """Create BLAST database for `database_records`."""
 
         logger.debug(
-            "Generating BLAST database with %s sequences named %s...",
+            "Generating BLAST database for %s sequences named '%s'...",
             len(self.database_records),
             self.database_title,
         )
@@ -232,7 +232,7 @@ class BlastSearcher:
             blast_program: BlastProgram,
             query: SeqRecord | Iterable[SeqRecord] | Path,
             results_path: Path | None = None,
-            output_format: OutputFormat = OutputFormat.BLAST_XML,
+            output_format: OutputFormat = OutputFormat.TABULAR,
     ) -> Generator[QueryResult, None, None] | None:
         """Perform a query through a specified BLAST program.
 
@@ -312,7 +312,7 @@ class BlastSearcher:
                 args,
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
             if self.verbose:
                 if result.stdout:
@@ -333,5 +333,99 @@ class BlastSearcher:
             self._temp_dir.cleanup()
 
 
-if __name__ == "__main__":
-    main()
+@dataclass(frozen=True)
+class BlastFilterer:
+    """Handles filtering BLAST results.
+
+    Attributes
+    ----------
+    minimum_aligned_length
+        Minimum number of amino acids that must be aligned between
+        query and template.
+    minimum_query_coverage
+        Minimum percent coverage between the query and template.
+    minimum_identity
+        Minimum sequence identity between the query and template.
+    maximum_evalue
+        Maximum E-value threshold.
+    relative_bitscore_cutoff
+        Maximum percentage that the bitscores of hits can differ from the
+        best bitscore and still be considered a top hit.
+    """
+
+    minimum_aligned_length: int = 20
+    minimum_query_coverage: float = 0.15
+    minimum_identity: float = 0.75
+    maximum_evalue: float = 1e-5
+    relative_bitscore_cutoff: float = 0.99
+
+    def filter_blast_hits(self, query_result: QueryResult) -> list[Hit]:
+        """Filter BLAST results to identify highest-confidence hits
+        for each query.
+
+        Parameters
+        ----------
+        query_result
+            BLAST results to filter.
+
+        Returns
+        -------
+        list[Hit]
+            Hits that passed all filtering thresholds.
+        """
+
+        query_length = query_result.seq_len
+        if not query_length:
+            raise ValueError(f"Query length not found for {query_result.id!r}.")
+
+        passing_hits = []
+        hit: Hit
+        for hit in query_result:
+            if not hit.hsps:
+                continue
+
+            best_hsp: HSP = max(
+                hit.hsps,
+                key=lambda hsp: hsp.bitscore
+            )
+
+            aligned_length = best_hsp.aln_span
+            query_coverage = best_hsp.query_span / query_length
+            identity = best_hsp.ident_num / aligned_length
+            if (aligned_length < self.minimum_aligned_length
+                    or query_coverage < self.minimum_query_coverage
+                    or identity < self.minimum_identity
+                    or best_hsp.evalue > self.maximum_evalue
+            ):
+                continue
+
+            passing_hits.append({
+                "hit": hit,
+                "hsp": best_hsp,
+                "aligned_length": aligned_length,
+                "query_coverage": query_coverage,
+                "identity": identity,
+                "evalue": best_hsp.evalue,
+                "bitscore": best_hsp.bitscore,
+            })
+        if not passing_hits:
+            return []
+
+        best_bitscore = max(result["bitscore"] for result in passing_hits)
+        retained_hits = [
+            result
+            for result in passing_hits
+            if result["bitscore"] >=
+               best_bitscore * self.relative_bitscore_cutoff
+        ]
+        return [
+            h["hit"] for h in sorted(
+                retained_hits,
+                key=lambda result: (
+                    result["bitscore"],
+                    result["query_coverage"],
+                    result["identity"],
+                ),
+                reverse=True,
+            )
+        ]

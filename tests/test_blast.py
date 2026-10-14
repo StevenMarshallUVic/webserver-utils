@@ -6,12 +6,13 @@ TODO: Add tests for tblastn.
 TODO: Add tests for tblastx.
 """
 
+import pickle
 import pytest
 
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
-from webserver_utils.blast import BlastSearcher, OutputFormat
+from webserver_utils.blast import BlastSearcher, OutputFormat, BlastFilterer
 
 database_records: tuple[SeqRecord, ...] = tuple([
     SeqRecord(
@@ -65,7 +66,7 @@ def test_blastp_single_query(tmp_path):
     )
     results = searcher.blastp(
         query=query_records[0],
-        output_format=OutputFormat.BLAST_XML
+        output_format=OutputFormat.TABULAR
     )
 
     assert results is not None and len(list(results)) == 1
@@ -91,3 +92,17 @@ def test_blastp_multi_query(tmp_path):
     )
     results = searcher.blastp(query=query_records)
     assert results is not None and len(list(results)) == 2
+
+
+class TestBlastFiltering:
+    @pytest.fixture
+    def blast_results_pkl(self, test_data_dir):
+        return test_data_dir / "blast" / "blast_results.pkl"
+
+    def test_blast_hit_filtering(self, blast_results_pkl):
+        blast_results = pickle.load(open(blast_results_pkl, "rb"))
+        filtered_hits = BlastFilterer().filter_blast_hits(blast_results)
+
+        assert len(filtered_hits) == 1
+        assert filtered_hits[0].id == "O83047"
+        assert filtered_hits[0].query_id == "TP0001_var0001"
